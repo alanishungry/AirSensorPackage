@@ -4,7 +4,7 @@
 #include <RTClib.h>
 #include <RTC_DS3231.h>
 #include <SD.h>
-#include <SD_t3.h>
+//#include <SD_t3.h>
 
 RTC_DS3231 RTC;
 
@@ -13,6 +13,9 @@ float measurement, pm, pmtotal, pmAverage, voltage, current, total;
 int j;
 int numLoops;
 File myFile;
+boolean resetFirstTime = false;
+int firstTime = 0;
+int logTime = 0;;
 
 String writeString;
 const char* buffer = "test.txt";
@@ -30,34 +33,27 @@ void setup() {
 
   //--------RTC SETUP ------------
   Serial.print("Initializing RTC Chronodot...");
-//  delay(1000);
+  //  delay(1000);
   Wire.begin();
   RTC.begin();
   Serial.print("Doing RTC checks...");
-//  delay(1000);
+  //  delay(1000);
   //Check if RTC is running
-  if (! RTC.isrunning()) {
-    Serial.println("RTC is NOT running!");
-//    delay(1000);
-    // following line sets the RTC to the date & time this sketch was compiled
-    //ONLY UNCOMMENT BELOW IF TIME NOT ALREADY SET!!!
-    //RTC.adjust(DateTime(__DATE__, __TIME__));
-  }
   Serial.print("Setting up RTC now...");
-//  delay(1000);
+  //  delay(1000);
   DateTime now = RTC.now();
   previousTime = 0;
   DateTime compiled = DateTime(__DATE__, __TIME__);
   if (now.unixtime() < compiled.unixtime()) {
     Serial.println("RTC is older than compile time!  Updating");
-//    delay(1000);
+    //    delay(1000);
     //ONLY UNCOMMENT BELOW IF TIME NOT ALREADY SET!!!
     //RTC.adjust(DateTime(__DATE__, __TIME__));
   }
   char datastr[100];
   RTC.getControlRegisterData( datastr[0]  );
   Serial.println("done");
-//  delay(1000);
+  //  delay(1000);
 
 
   //---------SD Setup-------------------
@@ -69,21 +65,24 @@ void setup() {
   }
   Serial.println("initialization done.");
 
-year = String(now.year(), DEC);
-    month = String(now.month(), DEC);
-    day = String(now.day(), DEC);
-    hour = String(now.hour(), DEC);
-    minute = String(now.minute(), DEC);
-    second = String(now.second(), DEC);
-    String logHeader = year + "/" + month + "/" + day + " " + hour + ":" + minute + ":" + second;
-    sdLog(buffer, "TSI Box 1: New Logging Session - "+logHeader);
+  year = String(now.year(), DEC);
+  month = String(now.month(), DEC);
+  day = String(now.day(), DEC);
+  hour = String(now.hour(), DEC);
+  minute = String(now.minute(), DEC);
+  second = String(now.second(), DEC);
+  String logHeader = year + "/" + month + "/" + day + " " + hour + ":" + minute + ":" + second;
+  sdLog(buffer, "TSI Box 1: New Logging Session - " + logHeader);
 }
 
 
 
 void loop()
 {
-
+  if(resetFirstTime){
+    firstTime = millis();
+    resetFirstTime = false;
+  }
   measurement = analogRead(A0);
   //  Serial.print("Analog Read 0 is: ");
   //  Serial.println(measurement);
@@ -91,22 +90,28 @@ void loop()
   //  Serial.print("Voltage = ");
   //  Serial.println(voltage);
   current = (voltage / 163.5) * 1000; // I = V/R (mult 1000 for mA)
-  pmtotal += (300 - 5) / (20 - 4) * (current - 4);
-
+  pm = (300 - 5) / (20 - 4) * (current - 4);
+  Serial.print("PM = ");
+  Serial.println(pm);
+  pmtotal += pm;
   //    Serial.print("TSI Sensor PM level is: ");
   //    Serial.println(pm);
-  DateTime now = RTC.now();
-  
-  if (now.second() != previousTime) { //If a second has passed
-    
-    previousTime = now.second(); // set previous time to current time
+  //DateTime now = RTC.now();
+
+  //if (now.second() != previousTime) { //If a second has passed
+  logTime = millis();
+  int timeElapsed = logTime - firstTime;
+  if ( timeElapsed > 60000){
+    resetFirstTime = true;
+    DateTime now = RTC.now();
+    //previousTime = now.second(); // set previous time to current time
     year = String(now.year(), DEC);
     month = String(now.month(), DEC);
     day = String(now.day(), DEC);
     hour = String(now.hour(), DEC);
     minute = String(now.minute(), DEC);
     second = String(now.second(), DEC);
-    
+
     Serial.print(year);
     Serial.print('/');
     Serial.print(month);
@@ -138,7 +143,7 @@ void loop()
   }
 
   j++;
-  delay(50);
+  delay(500);
 }
 
 void sdLog(const char* fileName, String stringToWrite) {
