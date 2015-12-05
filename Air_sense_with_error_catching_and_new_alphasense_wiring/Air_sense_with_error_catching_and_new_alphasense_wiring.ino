@@ -10,6 +10,7 @@
 
 //WRITE DATA TO FILE BELOW!!
 const char* buffer = "text.txt";
+String boxLabel = "Sensors Box 2";
 
 /***Libraries***/
 #include <Wire.h>
@@ -34,6 +35,11 @@ int sampleSize;
 int redPin = 5;
 int yellowPin = 6;
 int orangePin = 7;
+
+int tempCerrors = 0;
+int humErrors = 0;
+int TPMerrors = 0;
+int PMerrors = 0;
 
 uint16_t TPM01ValueAvg;
 uint16_t TPM2_5ValueAvg;
@@ -106,9 +112,9 @@ float workNO2, worksumNO2, auxNO2, auxsumNO2, workO3, worksumO3, auxO3, auxsumO3
 float NOsum, COsum, NO2sum, O3sum, NOavg, COavg, NO2avg, O3avg;
 //below pins for o3/no2
 int workNO2pin = A0; // GND SN1
-int auxNO2pin = A1; // 6V SN1 
-int workO3pin = A2; // GND SN2 
-int auxO3pin = A3; // 6V SN2 
+int auxNO2pin = A1; // 6V SN1
+int workO3pin = A2; // GND SN2
+int auxO3pin = A3; // 6V SN2
 
 //below for NO/CO
 int workNOpin = A6;//A12; // GND SN1
@@ -124,7 +130,7 @@ void setup() {
   //Initialize LEDs
   pinMode(redPin, OUTPUT);
   pinMode(yellowPin, OUTPUT);
-  
+
   //----------SD SETUP-------------
   //  while (!Serial) {
   //    ; // wait for serial port to connect. Needed for native USB port only
@@ -158,20 +164,20 @@ void setup() {
   Serial.print("Initializing RTC Chronodot...");
   //LED lights on before RTC is set up
   digitalWrite(orangePin, HIGH);
-  
+
   Wire.begin();
   RTC.begin();
   //if RTC gets initialized, turn LED off
   digitalWrite(orangePin, LOW);
-  
-//  Serial.print("Doing RTC checks...");
-//Check if RTC is running
-//  if (! RTC.isrunning()) {
-//    Serial.println("RTC is NOT running!");
-//    // following line sets the RTC to the date & time this sketch was compiled
-//    //ONLY UNCOMMENT BELOW IF TIME NOT ALREADY SET!!!
-//    //RTC.adjust(DateTime(__DATE__, __TIME__));
-//  }
+
+  //  Serial.print("Doing RTC checks...");
+  //Check if RTC is running
+  //  if (! RTC.isrunning()) {
+  //    Serial.println("RTC is NOT running!");
+  //    // following line sets the RTC to the date & time this sketch was compiled
+  //    //ONLY UNCOMMENT BELOW IF TIME NOT ALREADY SET!!!
+  //    //RTC.adjust(DateTime(__DATE__, __TIME__));
+  //  }
   Serial.print("Setting up RTC now...");
   DateTime now = RTC.now();
   DateTime compiled = DateTime(__DATE__, __TIME__);
@@ -204,8 +210,10 @@ void setup() {
 
   // Initial log each time teensy is plugged in.
   myFile = SD.open(buffer, FILE_WRITE);
-  String firstStr = "Box with multiple sensors...New Logging Session..." + firstDataString;
+  String firstStr = boxLabel + "...New Logging Session..." + firstDataString;
   sdLog(buffer, firstStr);
+  String infoStr = "yyyy/mm/dd, hh:mm:ss, TPM1, TPM2.5, TPM10, PM1, PM2.5, PM10, CO2, TempC, Humidity, NO, CO, NO2, O3";
+  sdLog(buffer, infoStr);
 }
 
 /**** LOOP BEGINS HERE ****//**** LOOP BEGINS HERE ****//**** LOOP BEGINS HERE ****/
@@ -222,6 +230,7 @@ void loop() {
    * Format: TSI_1 TSI_2.5 TSI_10 PM1 PM2.5 PM10
    */
   if (Serial1.available() > 0) {
+
     testvalue = Serial1.read();
 
     //if PM previously wasn't working but is now, turn off yellow LED
@@ -230,19 +239,13 @@ void loop() {
     //Make sure pm data serial reads are aligned starting from 42 (in hex)
 
     cnt = cnt + 1; // increment count until 24 for pm readings
+
+    //If any value is 66, and this value is not in position 1 of array, cnt = 0
+    //    if (testvalue == 66 && cnt != 1) {
+    //      cnt = 0;
+    //    }
+
     receiveDat[cnt] = testvalue;   //receive 1 of 24 bytes from air detector module
-
-    //troubleshoot this check
-    //    if (receiveDat[16] == 66 && receiveDat[17] == 77) {
-    //      receiveDat[16] = 0;
-    //      receiveDat[17] = 0;
-    //      cnt = 0;
-    //    }
-
-    //how does 2nd work if starts from 0
-    //    if (receiveDat[1] != 66 && receiveDat[2] != 77) {
-    //      cnt = 0;
-    //    }
 
     //first 4 bytes are always 42, 4D, 0, 14...or in dec : 66,77,0,20
 
@@ -251,6 +254,8 @@ void loop() {
       pmErrorCount++;
       cnt = 0;
     }
+
+
 
     if (cnt == 24)
     {
@@ -279,10 +284,15 @@ void loop() {
       TPM2_5Value = receiveDat[7] * 256 + receiveDat[8]; //calculate "TSI" PM2.5 concentration
       TPM10Value = receiveDat[9] * 256 + receiveDat[10]; //calculate "TSI" PM10 concentration
 
-      TPM01ValueSum += TPM01Value;
-      TPM2_5ValueSum += TPM2_5Value;
-      TPM10ValueSum += TPM10Value;
-
+      //Error checking and removing
+      if (TPM01Value > 500 || TPM2_5Value > 500 || TPM10Value > 500) {
+        TPMerrors++;
+      }
+      else {
+        TPM01ValueSum += TPM01Value;
+        TPM2_5ValueSum += TPM2_5Value;
+        TPM10ValueSum += TPM10Value;
+      }
       //    Serial.print("{TSI 01 = ");
       Serial.print(TPM01Value);
       Serial.print(" ");
@@ -298,10 +308,14 @@ void loop() {
       // ****************************
       //CONSIDER PUTTING IN IF CONDITION FOR ABSURDLY HIGH PM VALUES THAT MAY THROW OFF AVGS
       // ****************************
-      PM01ValueSum += PM01Value;
-      PM2_5ValueSum += PM2_5Value;
-      PM10ValueSum += PM10Value;
-
+      if (PM01Value > 500 || PM2_5Value > 500 || PM10Value > 500) {
+        PMerrors++;
+      }
+      else {
+        PM01ValueSum += PM01Value;
+        PM2_5ValueSum += PM2_5Value;
+        PM10ValueSum += PM10Value;
+      }
       //    Serial.print(", PM01 Value = ");
       Serial.print(PM01Value);
       Serial.print(" ");
@@ -329,39 +343,26 @@ void loop() {
        * SHT1X Temp/RH sensor
        * Readings in Fareinheit and % humidity
        */
-      //      readhum();
-      //              tempCsum = tempC + tempCsum;
-      //      Serial.print("tempC=");
-      //      Serial.print(tempC);
-      //      Serial.print(" ");
-      //      //              RHsum = RH + RHsum;
-      //      Serial.print("RH=");
-      //      Serial.print(RH);
-      //      Serial.println("");
-
-
-      //data logging for temp/rh
-      //      dataString += tempC;
-      //      dataString += " ";
-      //      dataString += RH;
-      //      dataString += " ";
-
-
-
       /*  Below is alternative code using sht1x library features
        *  However, this library has delays that throw off loop timing
        */
 
       tempC = sht1x.readTemperatureC();
-      tempCsum += tempC;
+      if (tempC < -10 || tempC > 40) {
+        tempCerrors++;
+      }
+      else {
+        tempCsum += tempC;
+      }
       tempF = sht1x.readTemperatureF();
       tempFsum += tempF;
       humidity = sht1x.readHumidity();
-      //      if (humidity < 0 || humidity > 100) {
-      //        humidity = 0;
-      //        numBadReadings++;
-      //      }
-      humiditySum += humidity;
+      if (humidity < 0 || humidity > 100) {
+        humErrors++;
+      }
+      else {
+        humiditySum += humidity;
+      }
       Serial.print(" Temp = ");
       //      Serial.print(tempF);
       //      Serial.print(" ");
@@ -407,7 +408,7 @@ void loop() {
       sampleSize++;
 
       //Debugging purposes
-      for(int x = 1; x <= 24; x++){
+      for (int x = 1; x <= 24; x++) {
         Serial.print(receiveDat[x]);
         Serial.print(" ");
       }
@@ -425,28 +426,29 @@ void loop() {
       Serial.print("Number of errors with PM: ");
       Serial.println(pmErrorCount);
       pmErrorCount = 0;
-//      Serial.print("Sample Size = ");
-//      Serial.println(sampleSize);
+      //      Serial.print("Sample Size = ");
+      //      Serial.println(sampleSize);
 
 
       //if time elapsed is greater than a minute, record averages
       //Serial.print("Checking if greater than a minute has elapsed...");
 
-      if (timeElapsed > 58500) {
+      if (timeElapsed > 58600) {
         //record averages
         Serial.print("A minute has elapsed...");
-        TPM01ValueAvg = TPM01ValueSum / sampleSize;
-        TPM2_5ValueAvg = TPM2_5ValueSum / sampleSize;
-        TPM10ValueAvg = TPM10ValueSum / sampleSize;
-        PM01ValueAvg = PM01ValueSum / sampleSize;
-        PM2_5ValueAvg = PM2_5ValueSum / sampleSize;
-        PM10ValueAvg = PM10ValueSum / sampleSize;
+
+        TPM01ValueAvg = TPM01ValueSum / (sampleSize - TPMerrors);
+        TPM2_5ValueAvg = TPM2_5ValueSum / (sampleSize - TPMerrors);
+        TPM10ValueAvg = TPM10ValueSum / (sampleSize - TPMerrors);
+        PM01ValueAvg = PM01ValueSum / (sampleSize - PMerrors);
+        PM2_5ValueAvg = PM2_5ValueSum / (sampleSize - PMerrors);
+        PM10ValueAvg = PM10ValueSum / (sampleSize - PMerrors);
 
         CO2concAvg = CO2concSum / sampleSize;
 
-        tempCavg = tempCsum / sampleSize;
+        tempCavg = tempCsum / (sampleSize - tempCerrors);
         tempFavg = tempFsum / sampleSize;
-        humidityAvg = humiditySum / (sampleSize - numBadReadings);
+        humidityAvg = humiditySum / (sampleSize - humErrors);
 
         NOavg = NOsum / sampleSize;
         COavg = COsum / sampleSize;
@@ -529,11 +531,14 @@ void loop() {
         humidityAvg = 0;
 
         sampleSize = 0;
-        numBadReadings = 0;
+        humErrors = 0;
+        TPMerrors = 0;
+        PMerrors = 0;
+        tempCerrors = 0;
       }
 
       dataString = ""; //empty dataString for next set of measurements
-      
+
       Serial.println();
       Serial.println("*********************");
     }
@@ -606,18 +611,21 @@ void loop() {
      */
 
     tempC = sht1x.readTemperatureC();
-    tempCsum += tempC;
+    if (tempC < -10 || tempC > 40) {
+      tempCerrors++;
+    }
+    else {
+      tempCsum += tempC;
+    }
     tempF = sht1x.readTemperatureF();
     tempFsum += tempF;
     humidity = sht1x.readHumidity();
-
-    //Below checks for unfeasible humidity values
-    //      if (humidity < 0 || humidity > 100) {
-    //        humidity = 0;
-    //        numBadReadings++;
-    //      }
-
-    humiditySum += humidity;
+    if (humidity < 0 || humidity > 100) {
+      humErrors++;
+    }
+    else {
+      humiditySum += humidity;
+    }
     Serial.print(" Temp = ");
     //      Serial.print(tempF);
     //      Serial.print(" ");
@@ -666,22 +674,24 @@ void loop() {
     timeElapsed = logTime - firstTime;
     Serial.print("Time elapsed: ");
     Serial.println(timeElapsed);
-    Serial.print("Sample Size = ");
-    Serial.println(sampleSize);
+    long intervalTime = timeElapsed - prevTimeElapsed;
+    Serial.print("Time from last measurement: ");
+    Serial.println(intervalTime);
+    prevTimeElapsed = timeElapsed;
 
 
     //if time elapsed is greater than a minute, record averages
     Serial.print("Checking if greater than a minute has elapsed...");
 
-    if (timeElapsed > 58500) {
+    if (timeElapsed > 58600) {
       //record averages
       Serial.print("A minute has elapsed...");
 
       CO2concAvg = CO2concSum / sampleSize;
 
-      tempCavg = tempCsum / sampleSize;
+      tempCavg = tempCsum / (sampleSize - tempCerrors);
       tempFavg = tempFsum / sampleSize;
-      humidityAvg = humiditySum / (sampleSize - numBadReadings);
+      humidityAvg = humiditySum / (sampleSize - humErrors);
 
       NOavg = NOsum / sampleSize;
       COavg = COsum / sampleSize;
@@ -742,13 +752,12 @@ void loop() {
       humidityAvg = 0;
 
       sampleSize = 0;
-      numBadReadings = 0;
+      humErrors = 0;
+      tempCerrors = 0;
     }
     dataString = ""; //empty dataString for next set of measurements
     Serial.println();
   }
-
-
 }
 
 //should create a method for logging
