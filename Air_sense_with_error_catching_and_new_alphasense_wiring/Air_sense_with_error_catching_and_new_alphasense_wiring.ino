@@ -8,6 +8,11 @@
  *
  */
 
+ //RED LED FLASHES IF SD CARD NEVER INITIALIZED
+ //RED LED STAYS ON IF SD CARD CAN'T LOG DURING LOOP
+ //ORANGE LED STAYS ON IF CLOCK IS HUNG UP IN INITIALIZATION
+ //YELLOW LED STAYS ON IF PM SENSOR IS NOT SENDING SERIAL DATA (NA pm values)
+
 //WRITE DATA TO FILE BELOW!!
 const char* buffer = "text.txt";
 String boxLabel = "Sensors Box 2";
@@ -168,7 +173,7 @@ void setup() {
   Wire.begin();
   RTC.begin();
   //if RTC gets initialized, turn LED off
-  digitalWrite(orangePin, LOW);
+  
 
   //  Serial.print("Doing RTC checks...");
   //Check if RTC is running
@@ -189,6 +194,7 @@ void setup() {
   char datastr[100];
   RTC.getControlRegisterData( datastr[0]  );
   Serial.println("done");
+  digitalWrite(orangePin, LOW);
 
 
 
@@ -717,7 +723,7 @@ void loop() {
         dataString += "NA";
         dataString += ", ";
       }
-      dataString += ", " + String(CO2concAvg, 2) + ", " + String(tempCavg, 2) + ", " + String(humidityAvg, 2);
+      dataString += String(CO2concAvg, 2) + ", " + String(tempCavg, 2) + ", " + String(humidityAvg, 2);
       dataString += ", " + String(NOavg) + ", " + String(COavg) + ", " + String(NO2avg) + ", " + String(O3avg);
 
       Serial.println("----------------------------------------");
